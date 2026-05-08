@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 1. Users Collection
+    match /users/{userId} {
+      function isValidUser(data) {
+        return data.name is string && data.name.size() > 0 && data.name.size() <= 50
+            && data.email is string && data.email.size() > 0 && data.email.size() <= 100
+            && (data.get('language', 'bn') in ['bn', 'en'])
+            && (data.get('theme', 'dark') in ['light', 'dark']);
+      }
+
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(incoming());
+      allow update: if isOwner(userId) && isValidUser(incoming())
+                   && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'language', 'theme']);
+    }
+
+    // 2. Accounts Collection
+    match /accounts/{accountId} {
+      function isValidAccount(data) {
+        return data.name is string && data.name.size() > 0 && data.name.size() <= 50
+            && data.type is string && data.type.size() > 0
+            && data.balance is number
+            && data.userId == request.auth.uid;
+      }
+
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidAccount(incoming());
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && isValidAccount(incoming())
+                   && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'type', 'balance']);
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // 3. Categories Collection
+    match /categories/{categoryId} {
+      function isValidCategory(data) {
+        return data.name is string && data.name.size() > 0 && data.name.size() <= 30
+            && data.type in ['income', 'expense']
+            && data.icon is string && data.icon.size() <= 50
+            && data.color is string && data.color.size() <= 20
+            && data.userId == request.auth.uid;
+      }
+
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidCategory(incoming());
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && isValidCategory(incoming());
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // 4. Transactions Collection
+    match /transactions/{transactionId} {
+      function isValidTransaction(data) {
+        return data.userId == request.auth.uid
+            && data.accountId is string
+            && data.categoryId is string
+            && data.amount is number
+            && data.type in ['income', 'expense']
+            && data.date is string && data.date.size() <= 10
+            && (data.get('note', '') is string && data.get('note', '').size() <= 200);
+      }
+
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidTransaction(incoming());
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && isValidTransaction(incoming());
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // 5. Loans Collection
+    match /loans/{loanId} {
+      function isValidLoan(data) {
+        return data.userId == request.auth.uid
+            && data.personName is string && data.personName.size() > 0
+            && data.amount is number
+            && data.type in ['give', 'take']
+            && data.status in ['pending', 'partial', 'completed'];
+      }
+
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidLoan(incoming());
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid && isValidLoan(incoming());
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+
+      // Subcollection: Payments
+      match /payments/{paymentId} {
+        allow read, write: if isSignedIn() && get(/databases/$(database)/documents/loans/$(loanId)).data.userId == request.auth.uid;
+      }
+    }
+  }
+}

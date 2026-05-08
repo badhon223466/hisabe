@@ -1,0 +1,115 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Public and private user profile data",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "language": { "type": "string", "enum": ["bn", "en"] },
+        "theme": { "type": "string", "enum": ["light", "dark"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "email"]
+    },
+    "Account": {
+      "title": "Wallet/Account",
+      "description": "Financial accounts like Cash, Bank, bKash",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "balance": { "type": "number" },
+        "userId": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "type", "balance", "userId"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Income or Expense categories",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "icon": { "type": "string" },
+        "color": { "type": "string" },
+        "userId": { "type": "string" }
+      },
+      "required": ["name", "type", "icon", "color"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Income or Expense records",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "accountId": { "type": "string" },
+        "categoryId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "note": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "location": { "type": "string" },
+        "receiptUrl": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "accountId", "categoryId", "amount", "type", "date"]
+    },
+    "Loan": {
+      "title": "Loan/Due",
+      "description": "Money receivable or payable",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "personName": { "type": "string" },
+        "phone": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["give", "take"] },
+        "dueDate": { "type": "string", "format": "date" },
+        "status": { "type": "string", "enum": ["pending", "partial", "completed"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "personName", "amount", "type", "status"]
+    },
+    "LoanPayment": {
+      "title": "Loan Payment",
+      "description": "Payments made towards a loan",
+      "type": "object",
+      "properties": {
+        "loanId": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "format": "date" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["loanId", "amount", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile data"
+    },
+    "/accounts/{accountId}": {
+      "schema": { "$ref": "#/entities/Account" },
+      "description": "User financial accounts"
+    },
+    "/categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "Income/Expense categories"
+    },
+    "/transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Financial transactions"
+    },
+    "/loans/{loanId}": {
+      "schema": { "$ref": "#/entities/Loan" },
+      "description": "Loan and due records"
+    },
+    "/loans/{loanId}/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/LoanPayment" },
+      "description": "Payments for a specific loan"
+    }
+  }
+}

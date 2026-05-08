@@ -1,0 +1,7 @@
+{
+  "name": "Smart Expense Manager",
+  "description": "A premium, full-stack personal finance application with Bengali/English support, AI-powered analytics, and comprehensive loan management.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
