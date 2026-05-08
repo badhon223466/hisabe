@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { api } from '../services/api';
-import { DashboardData, Account } from '../types';
+import { DashboardData, Account, Transaction } from '../types';
 import { Icon } from '../components/Icon';
 import { motion } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const Dashboard: React.FC = () => {
+const Dashboard: React.FC<{ onEdit?: (tx: Transaction) => void; onAdd?: () => void }> = ({ onEdit, onAdd }) => {
   const { t } = useApp();
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -50,7 +50,7 @@ const Dashboard: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-20">
       {/* Filters */}
       <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
         {filters.map((f) => (
@@ -144,16 +144,32 @@ const Dashboard: React.FC = () => {
                   <p className="text-[10px] text-slate-400 mt-0.5">{tx.note || 'No note'}</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className={`font-bold text-sm ${tx.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
-                  {tx.type === 'income' ? '+' : '-'} ৳ {tx.amount.toLocaleString()}
-                </p>
-                <p className="text-[10px] text-slate-400 mt-0.5">{tx.date}</p>
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <p className={`font-bold text-sm ${tx.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                    {tx.type === 'income' ? '+' : '-'} ৳ {tx.amount.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{tx.date}</p>
+                </div>
+                <button 
+                   onClick={(e) => { e.stopPropagation(); onEdit?.(tx); }}
+                   className="p-1.5 text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg"
+                >
+                  <Icon name="Edit2" size={14} />
+                </button>
               </div>
             </motion.div>
           ))}
         </div>
       </section>
+
+      {/* Floating Action Button (Only on Dashboard) */}
+      <button
+        onClick={onAdd}
+        className="fixed bottom-24 right-6 w-16 h-16 bg-indigo-600 text-white rounded-2xl shadow-2xl shadow-indigo-200 flex items-center justify-center z-40 transition-transform active:scale-90"
+      >
+        <Icon name="Save" size={32} />
+      </button>
     </div>
   );
 };

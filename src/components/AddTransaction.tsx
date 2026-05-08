@@ -5,19 +5,23 @@ import { Category, Account } from '../types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Icon } from './Icon';
 
-const AddTransaction: React.FC<{ onClose: () => void; onSuccess: () => void }> = ({ onClose, onSuccess }) => {
+const AddTransaction: React.FC<{ 
+  onClose: () => void; 
+  onSuccess: () => void;
+  editingTransaction?: any;
+}> = ({ onClose, onSuccess, editingTransaction }) => {
   const { t } = useApp();
-  const [type, setType] = useState<'income' | 'expense'>('expense');
+  const [type, setType] = useState<'income' | 'expense'>(editingTransaction?.type || 'expense');
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [formData, setFormData] = useState({
-    amount: '',
-    category_id: '',
-    account_id: '',
-    note: '',
-    date: new Date().toISOString().split('T')[0],
+    amount: editingTransaction?.amount?.toString() || '',
+    category_id: editingTransaction?.category_id?.toString() || '',
+    account_id: editingTransaction?.account_id?.toString() || '',
+    note: editingTransaction?.note || '',
+    date: editingTransaction?.date || new Date().toISOString().split('T')[0],
   });
 
   useEffect(() => {
@@ -29,7 +33,10 @@ const AddTransaction: React.FC<{ onClose: () => void; onSuccess: () => void }> =
         ]);
         setCategories(cats);
         setAccounts(accs);
-        if (accs.length > 0) setFormData(prev => ({ ...prev, account_id: accs[0].id.toString() }));
+        
+        if (!editingTransaction && accs.length > 0) {
+          setFormData(prev => ({ ...prev, account_id: accs[0].id.toString() }));
+        }
       } catch (e) {
         console.error(e);
       } finally {
@@ -37,7 +44,7 @@ const AddTransaction: React.FC<{ onClose: () => void; onSuccess: () => void }> =
       }
     };
     fetchMeta();
-  }, []);
+  }, [editingTransaction]);
 
   const filteredCategories = categories.filter(c => c.type === type);
 
@@ -46,13 +53,19 @@ const AddTransaction: React.FC<{ onClose: () => void; onSuccess: () => void }> =
     if (!formData.amount || !formData.category_id || !formData.account_id) return;
 
     try {
-      await api.transactions.create({
+      const payload = {
         ...formData,
         amount: parseFloat(formData.amount),
         category_id: formData.category_id,
         account_id: formData.account_id,
         type,
-      });
+      };
+
+      if (editingTransaction) {
+        await api.transactions.update(editingTransaction.id.toString(), payload);
+      } else {
+        await api.transactions.create(payload);
+      }
       onSuccess();
     } catch (e) {
       alert('Failed to save transaction');
@@ -67,7 +80,9 @@ const AddTransaction: React.FC<{ onClose: () => void; onSuccess: () => void }> =
       className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-slate-950 p-6"
     >
       <div className="flex justify-between items-center mb-8">
-        <h2 className="text-2xl font-bold">{t(type === 'income' ? 'add_income' : 'add_expense')}</h2>
+        <h2 className="text-2xl font-bold">
+          {editingTransaction ? t('edit') : t(type === 'income' ? 'add_income' : 'add_expense')}
+        </h2>
         <button onClick={onClose} className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
           <Icon name="X" size={24} />
         </button>

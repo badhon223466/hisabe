@@ -6,7 +6,7 @@ import { Transaction } from '../types';
 import { Icon } from './Icon';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const TransactionsList: React.FC = () => {
+const TransactionsList: React.FC<{ onEdit?: (tx: Transaction) => void }> = ({ onEdit }) => {
   const { t } = useApp();
   const { showToast } = useToast();
   const [txs, setTxs] = useState<Transaction[]>([]);
@@ -27,10 +27,10 @@ const TransactionsList: React.FC = () => {
     fetchTxs(filter);
   }, [filter]);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this transaction?")) return;
+  const handleDelete = async (id: string | number) => {
+    if (!confirm("Are you sure you want to delete this transaction? Balance will be adjusted.")) return;
     try {
-      await api.transactions.delete(id);
+      await api.transactions.delete(id.toString());
       showToast("Transaction deleted", "success");
       fetchTxs(filter);
     } catch (e) {
@@ -101,18 +101,26 @@ const TransactionsList: React.FC = () => {
                   <p className="text-[10px] text-slate-400 mt-0.5">{tx.date}</p>
                 </div>
                 
-                <button 
-                  onClick={() => handleDelete(tx.id)}
-                  className="p-2 text-slate-300 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
-                >
-                  <Icon name="Trash2" size={16} />
-                </button>
+                <div className="flex flex-col gap-1">
+                  <button 
+                    onClick={() => onEdit?.(tx)}
+                    className="p-1 text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
+                  >
+                    <Icon name="Edit2" size={14} />
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(tx.id)}
+                    className="p-1 text-rose-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md"
+                  >
+                    <Icon name="Trash2" size={14} />
+                  </button>
+                </div>
               </div>
             </motion.div>
           ))}
         </AnimatePresence>
 
-        {txs.length === 0 && (
+        {txs.length === 0 && !loading && (
           <div className="p-20 text-center text-slate-400 italic">
             No transactions found yet.
           </div>

@@ -223,6 +223,46 @@ export const api = {
         throw e;
       }
     },
+    update: async (id: string, data: any) => {
+      try {
+        const docRef = doc(db, 'transactions', id);
+        const oldSnap = await getDoc(docRef);
+        if (!oldSnap.exists()) throw new Error("Transaction not found");
+        
+        const oldData = oldSnap.data();
+        const { category_id, account_id, ...rest } = data;
+
+        // 1. Reverse old balance impact
+        const oldAccRef = doc(db, 'accounts', oldData.accountId);
+        const oldAccSnap = await getDoc(oldAccRef);
+        if (oldAccSnap.exists()) {
+           const balance = oldAccSnap.data().balance || 0;
+           const reversal = oldData.type === 'income' ? -oldData.amount : oldData.amount;
+           await updateDoc(oldAccRef, { balance: balance + reversal });
+        }
+
+        // 2. Apply new balance impact (might be same account or different)
+        const newAccRef = doc(db, 'accounts', account_id);
+        const newAccSnap = await getDoc(newAccRef);
+        if (newAccSnap.exists()) {
+           const balance = newAccSnap.data().balance || 0;
+           const impact = data.type === 'income' ? data.amount : -data.amount;
+           await updateDoc(newAccRef, { balance: balance + impact });
+        }
+
+        // 3. Update the transaction
+        await updateDoc(docRef, {
+          ...rest,
+          categoryId: category_id,
+          accountId: account_id,
+          updated_at: Timestamp.now()
+        });
+
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, 'transactions');
+        throw e;
+      }
+    },
     delete: async (id: string) => {
       try {
         const docRef = doc(db, 'transactions', id);
@@ -271,6 +311,26 @@ export const api = {
         throw e;
       }
     },
+    delete: async (id: string) => {
+      try {
+        const docRef = doc(db, 'accounts', id);
+        // Maybe check if account has transactions first? 
+        // For now just delete.
+        await deleteDoc(docRef);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.DELETE, 'accounts');
+        throw e;
+      }
+    },
+    update: async (id: string, data: any) => {
+      try {
+        const docRef = doc(db, 'accounts', id);
+        await updateDoc(docRef, data);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, 'accounts');
+        throw e;
+      }
+    },
     create: async (data: any) => {
       const userId = auth.currentUser?.uid;
       try {
@@ -313,16 +373,63 @@ export const api = {
         throw e;
       }
     },
-    addPayment: async (loanId: string, amount: number) => {
+    delete: async (id: string) => {
       try {
-        await addDoc(collection(db, `loans/${loanId}/payments`), {
-          amount,
-          date: new Date().toISOString().split('T')[0],
-          created_at: Timestamp.now()
-        });
-        // Update loan status if needed (complex logic could go here)
+        await deleteDoc(doc(db, 'loans', id));
       } catch (e) {
-        handleFirestoreError(e, OperationType.CREATE, 'loan_payments');
+        handleFirestoreError(e, OperationType.DELETE, 'loans');
+        throw e;
+      }
+    },
+    update: async (id: string, data: any) => {
+      try {
+        await updateDoc(doc(db, 'loans', id), data);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, 'loans');
+        throw e;
+      }
+    },
+    repay: async (loanId: string, amount: number, accountId: string, note?: string) => {
+      const userId = auth.currentUser?.uid;
+      if (!userId) throw new Error("Not authenticated");
+      
+      try {
+        const loanRef = doc(db, 'loans', loanId);
+        const loanSnap = await getDoc(loanRef);
+        if (!loanSnap.exists()) throw new Error("Loan not found");
+        
+        const loanData = loanSnap.data();
+        const remaining = loanData.amount - (loanData.paidAmount || 0);
+        const newPaidAmount = (loanData.paidAmount || 0) + amount;
+        
+        // 1. Update loan
+        await updateDoc(loanRef, {
+          paidAmount: newPaidAmount,
+          status: newPaidAmount >= loanData.amount ? 'completed' : 'pending'
+        });
+
+        // 2. Create transaction record
+        // If we GAVE money (loanData.type === 'give'), then receiving it back is INcome
+        // If we TOOK money (loanData.type === 'take'), then paying it back is EXpense
+        const txType = loanData.type === 'give' ? 'income' : 'expense';
+        
+        const cats = await api.categories.list();
+        // Look for a 'Loan Repayment' category or use 'General'
+        let catId = cats.find(c => c.name.toLowerCase().includes('loan'))?.id || cats[0].id;
+
+        await api.transactions.create({
+          type: txType,
+          amount,
+          category_id: catId,
+          note: note || `Loan repayment from ${loanData.personName}`,
+          date: new Date().toISOString().split('T')[0],
+          account_id: accountId
+        });
+
+        return { success: true };
+      } catch (e) {
+        handleFirestoreError(e, OperationType.WRITE, 'loans/repay');
+        throw e;
       }
     }
   },
@@ -355,45 +462,28 @@ export const api = {
         throw e;
       }
     },
-  },
-  seed: {
-    data: async () => {
+    create: async (data: any) => {
       const userId = auth.currentUser?.uid;
-      if (!userId) throw new Error("User not authenticated");
-
       try {
-        const [cats, accs] = await Promise.all([
-          api.categories.list(),
-          api.accounts.list()
-        ]);
-
-        const foodCat = cats.find(c => c.name === 'Food') || cats[0];
-        const salaryCat = cats.find(c => c.name === 'Salary') || cats[0];
-        const transportCat = cats.find(c => c.name === 'Transport') || cats[0];
-        const mainAcc = accs[0];
-
-        const samples = [
-          { amount: 50000, type: 'income', categoryId: salaryCat.id, note: 'Monthly Salary', date: '2026-05-01' },
-          { amount: 1500, type: 'expense', categoryId: foodCat.id, note: 'Lunch with friends', date: '2026-05-02' },
-          { amount: 200, type: 'expense', categoryId: transportCat.id, note: 'Bus fare', date: '2026-05-02' },
-          { amount: 5000, type: 'income', categoryId: salaryCat.id, note: 'Freelance Bonus', date: '2026-05-03' },
-          { amount: 1200, type: 'expense', categoryId: foodCat.id, note: 'Dinner', date: '2026-05-04' },
-          { amount: 300, type: 'expense', categoryId: transportCat.id, note: 'Rickshaw fare', date: '2026-05-05' },
-          { amount: 2500, type: 'expense', categoryId: foodCat.id, note: 'Grocery shopping', date: '2026-05-06' },
-          { amount: 1000, type: 'expense', categoryId: foodCat.id, note: 'Snacks', date: '2026-05-07' },
-        ];
-
-        for (const s of samples) {
-          await addDoc(collection(db, 'transactions'), {
-            ...s,
-            userId,
-            accountId: mainAcc.id,
-            created_at: Timestamp.now()
-          });
-        }
-        return { success: true };
+        await addDoc(collection(db, 'categories'), { ...data, userId });
       } catch (e) {
-        handleFirestoreError(e, OperationType.WRITE, 'seed');
+        handleFirestoreError(e, OperationType.CREATE, 'categories');
+        throw e;
+      }
+    },
+    update: async (id: string, data: any) => {
+      try {
+        await updateDoc(doc(db, 'categories', id), data);
+      } catch (e) {
+        handleFirestoreError(e, OperationType.UPDATE, 'categories');
+        throw e;
+      }
+    },
+    delete: async (id: string) => {
+      try {
+        await deleteDoc(doc(db, 'categories', id));
+      } catch (e) {
+        handleFirestoreError(e, OperationType.DELETE, 'categories');
         throw e;
       }
     }

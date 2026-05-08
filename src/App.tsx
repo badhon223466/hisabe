@@ -20,6 +20,7 @@ const AppContent: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [editingTx, setEditingTx] = useState<any>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
@@ -34,8 +35,19 @@ const AppContent: React.FC = () => {
 
   const handleAddSuccess = () => {
     setShowAddModal(false);
+    setEditingTx(null);
     triggerRefresh();
     showToast("Transaction saved successfully!", "success");
+  };
+
+  const openAdd = () => {
+    setEditingTx(null);
+    setShowAddModal(true);
+  };
+
+  const openEdit = (tx: any) => {
+    setEditingTx(tx);
+    setShowAddModal(true);
   };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 font-bold text-indigo-600">Loading...</div>;
@@ -45,8 +57,8 @@ const AppContent: React.FC = () => {
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard key={refreshTrigger} />} />
-          <Route path="/transactions" element={<TransactionsList key={refreshTrigger} />} />
+          <Route path="/" element={<Dashboard key={refreshTrigger} onEdit={openEdit} onAdd={openAdd} />} />
+          <Route path="/transactions" element={<TransactionsList key={refreshTrigger} onEdit={openEdit} />} />
           <Route path="/accounts" element={<AccountsList key={refreshTrigger} />} />
           <Route path="/loans" element={<LoansList key={refreshTrigger} />} />
           <Route path="/settings" element={<SettingsPage onLogout={() => { signOut(auth); }} />} />
@@ -54,19 +66,12 @@ const AppContent: React.FC = () => {
         </Route>
       </Routes>
 
-      {/* Floating Action Button */}
-      <button
-        onClick={() => setShowAddModal(true)}
-        className="fixed bottom-24 right-6 w-16 h-16 bg-indigo-600 text-white rounded-2xl shadow-2xl shadow-indigo-200 flex items-center justify-center z-40 transition-transform active:scale-90"
-      >
-        <Icon name="Save" size={32} />
-      </button>
-
       <AnimatePresence>
         {showAddModal && (
           <AddTransaction 
-            onClose={() => setShowAddModal(false)}
-            onSuccess={handleAddSuccess} 
+            onClose={() => { setShowAddModal(false); setEditingTx(null); }}
+            onSuccess={handleAddSuccess}
+            editingTransaction={editingTx}
           />
         )}
       </AnimatePresence>
