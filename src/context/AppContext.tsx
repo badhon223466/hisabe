@@ -36,6 +36,9 @@ const translations: Record<Language, Record<string, string>> = {
     login: 'লগইন',
     register: 'রেজিস্ট্রেশন',
     tips: 'এআই পরামর্শ',
+    today: 'আজ',
+    this_week: 'এই সপ্তাহ',
+    this_month: 'এই মাস',
   },
   en: {
     dashboard: 'Dashboard',
@@ -61,6 +64,9 @@ const translations: Record<Language, Record<string, string>> = {
     login: 'Login',
     register: 'Register',
     tips: 'AI Insights',
+    today: 'Today',
+    this_week: '7 Days',
+    this_month: '1 Month',
   }
 };
 

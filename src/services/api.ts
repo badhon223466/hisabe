@@ -47,29 +47,52 @@ export const api = {
     getUser: () => auth.currentUser,
   },
   dashboard: {
-    get: async (): Promise<DashboardData> => {
+    get: async (range: 'today' | '7days' | '30days' | 'all' = 'all'): Promise<DashboardData> => {
       const userId = auth.currentUser?.uid;
       if (!userId) throw new Error("Not authenticated");
 
       try {
-        const txQuery = query(
-          collection(db, 'transactions'),
-          where('userId', '==', userId),
-          orderBy('date', 'desc'),
-          limit(5)
-        );
-        const txSnap = await getDocs(txQuery);
         const cats = await api.categories.list();
-        const recent = txSnap.docs.map(d => {
+        
+        // Stats query - we still need to calculate stats based on range
+        // For simplicity and to avoid complex index requirements right now, 
+        // we'll fetch all and filter in memory or fetch with date where possible.
+        let txQuery = query(collection(db, 'transactions'), where('userId', '==', userId));
+        
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        
+        let minDate = '';
+        if (range === 'today') {
+           minDate = now.toISOString().split('T')[0];
+        } else if (range === '7days') {
+           const d = new Date();
+           d.setDate(d.getDate() - 7);
+           minDate = d.toISOString().split('T')[0];
+        } else if (range === '30days') {
+           const d = new Date();
+           d.setMonth(d.getMonth() - 1);
+           minDate = d.toISOString().split('T')[0];
+        }
+
+        if (minDate) {
+          txQuery = query(txQuery, where('date', '>=', minDate));
+        }
+
+        const txSnap = await getDocs(txQuery);
+        let income = 0;
+        let expense = 0;
+        
+        const allTxs = txSnap.docs.map(d => {
           const data = d.data();
           const cat = cats.find((c: Category) => c.id === data.categoryId);
+          if (data.type === 'income') income += data.amount;
+          else expense += data.amount;
+
           return { 
             id: d.id, 
-            type: data.type,
-            amount: data.amount,
+            ...data,
             category_id: data.categoryId,
-            note: data.note,
-            date: data.date,
             account_id: data.accountId,
             category_name: cat?.name || 'General',
             category_icon: cat?.icon || 'Wallet',
@@ -77,17 +100,10 @@ export const api = {
           } as Transaction;
         });
 
-        const allTxQuery = query(collection(db, 'transactions'), where('userId', '==', userId));
-        const allTxSnap = await getDocs(allTxQuery);
-        let income = 0;
-        let expense = 0;
-        allTxSnap.docs.forEach(d => {
-          const data = d.data();
-          if (data.type === 'income') income += data.amount;
-          else expense += data.amount;
-        });
+        // Sort by date desc for "recent"
+        const recent = [...allTxs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
 
-        // Get loans info
+        // Get loans info (loans don't usually filter by range in same way, but keeping it)
         const loanQuery = query(collection(db, 'loans'), where('userId', '==', userId));
         const loanSnap = await getDocs(loanQuery);
         let receivable = 0;
@@ -127,28 +143,49 @@ export const api = {
     }
   },
   transactions: {
-    list: async (): Promise<Transaction[]> => {
+    list: async (range: 'today' | '7days' | '30days' | 'all' = 'all'): Promise<Transaction[]> => {
       const userId = auth.currentUser?.uid;
       try {
-        const q = query(collection(db, 'transactions'), where('userId', '==', userId), orderBy('date', 'desc'));
+        let q = query(collection(db, 'transactions'), where('userId', '==', userId));
+        
+        const now = new Date();
+        now.setHours(0, 0, 0, 0);
+        
+        let minDate = '';
+        if (range === 'today') {
+           minDate = now.toISOString().split('T')[0];
+        } else if (range === '7days') {
+           const d = new Date();
+           d.setDate(d.getDate() - 7);
+           minDate = d.toISOString().split('T')[0];
+        } else if (range === '30days') {
+           const d = new Date();
+           d.setMonth(d.getMonth() - 1);
+           minDate = d.toISOString().split('T')[0];
+        }
+
+        if (minDate) {
+          q = query(q, where('date', '>=', minDate));
+        }
+        
+        // Sorting in client if complex where/orderBy combo hits index missing
         const snap = await getDocs(q);
         const cats = await api.categories.list();
-        return snap.docs.map(d => {
+        const txs = snap.docs.map(d => {
           const data = d.data();
           const cat = cats.find((c: Category) => c.id === data.categoryId);
           return { 
             id: d.id, 
-            type: data.type,
-            amount: data.amount,
+            ...data,
             category_id: data.categoryId,
-            note: data.note,
-            date: data.date,
             account_id: data.accountId,
             category_name: cat?.name || 'General',
             category_icon: cat?.icon || 'Wallet',
             category_color: cat?.color || '#94a3b8'
           } as Transaction;
         });
+
+        return txs.sort((a, b) => b.date.localeCompare(a.date));
       } catch (e) {
         handleFirestoreError(e, OperationType.LIST, 'transactions');
         throw e;

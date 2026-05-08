@@ -4,24 +4,34 @@ import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import fs from "fs";
 import { GoogleGenAI } from "@google/genai";
-import * as admin from "firebase-admin";
+import { initializeApp, getApps, App } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
 import firebaseConfig from "./firebase-applet-config.json";
 
 const PORT = 3000;
 
 // Initialize Firebase Admin lazily to prevent boot-time crashes
-let firebaseAdminApp: any = null;
+let firebaseAdminApp: App | null = null;
 function getFirebaseAdmin() {
   if (!firebaseAdminApp) {
     try {
-      if (admin.apps.length > 0) {
-        firebaseAdminApp = admin.apps[0];
+      const apps = getApps();
+      const targetProjectId = firebaseConfig.projectId;
+      
+      // Look for a named app first to avoid [DEFAULT] conflicts
+      const existingApp = apps.find(app => app.name === 'applet');
+      
+      if (existingApp) {
+        firebaseAdminApp = existingApp;
+        console.log("Using existing Admin app [applet] for project:", targetProjectId);
       } else {
-        firebaseAdminApp = admin.initializeApp({
-          projectId: firebaseConfig.projectId,
-        });
+        // Try initializing a named app
+        firebaseAdminApp = initializeApp({
+          projectId: targetProjectId,
+        }, 'applet');
+        console.log("Firebase Admin initialized [applet] for project:", targetProjectId);
       }
-      console.log("Firebase Admin initialized for project:", firebaseConfig.projectId);
     } catch (e) {
       console.error("Firebase Admin initialization failed:", e);
     }
@@ -47,11 +57,11 @@ async function startServer() {
       try {
         const adminApp = getFirebaseAdmin();
         if (!adminApp) throw new Error("Firebase Admin not available");
-        const decodedToken = await adminApp.auth().verifyIdToken(token);
+        const decodedToken = await getAuth(adminApp).verifyIdToken(token);
         req.user = decodedToken;
         next();
-      } catch (error) {
-        console.error("Token verification failed:", error);
+      } catch (error: any) {
+        console.error("Token verification failed:", error?.message || error);
         res.sendStatus(403);
       }
     };
@@ -63,24 +73,37 @@ async function startServer() {
     const userId = req.user.uid;
     const adminApp = getFirebaseAdmin();
     if (!adminApp) return res.status(500).json({ error: "Firebase Admin Error" });
-    const db = adminApp.firestore((firebaseConfig as any).firestoreDatabaseId || '(default)');
     
     try {
-      const adminApp = getFirebaseAdmin();
-      if (!adminApp) throw new Error("Firebase Admin not available");
-      
-      const dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
+      let dbId = (firebaseConfig as any).firestoreDatabaseId || '(default)';
       console.log(`Fetching insights for user ${userId} using DB ${dbId}`);
       
-      const db = adminApp.firestore(dbId);
+      let db = getFirestore(adminApp, dbId);
       
-      const txSnap = await db.collection('transactions')
-        .where('userId', '==', userId)
-        .orderBy('date', 'desc')
-        .limit(30)
-        .get();
+      let txSnap;
+      try {
+        // Remove orderBy for now to reduce index requirements and potential PERMISSION_DENIED causes
+        txSnap = await db.collection('transactions')
+          .where('userId', '==', userId)
+          .limit(30)
+          .get();
+      } catch (err: any) {
+        // If it's a permission error and we used a named DB, try (default) as fallback
+        const msg = err?.message?.toLowerCase() || '';
+        if ((msg.includes('permission') || msg.includes('not found')) && dbId !== '(default)') {
+           console.log(`Named database access failed (${msg}), trying (default) fallback...`);
+           db = getFirestore(adminApp, '(default)');
+           txSnap = await db.collection('transactions')
+             .where('userId', '==', userId)
+             .limit(30)
+             .get();
+        } else {
+          throw err;
+        }
+      }
         
-      const transactions = txSnap.docs.map(d => d.data());
+      const transactions = txSnap.docs.map((d: any) => d.data());
+      console.log(`Found ${transactions.length} transactions for insight generation`);
       
       const prompt = `Based on these financial transactions, provide 3 short financial savings tips or spending insights in Bengali. 
       Keep them very short (max 15 words each). Return as a JSON array of strings only.
@@ -98,8 +121,10 @@ async function startServer() {
          const cleaned = text.replace(/```json|```/g, '').trim();
          res.json(JSON.parse(cleaned));
       }
-    } catch (e) {
-      console.error("AI Insight Error:", e);
+    } catch (e: any) {
+      console.error("AI Insight Error:", e?.message || e);
+      if (e?.code) console.error("Error Code:", e.code);
+      
       res.json([
         "আপনার খরচ ট্র্যাক করা চালিয়ে যান।",
         "অপ্রয়োজনীয় খরচ কমানোর চেষ্টা করুন।",

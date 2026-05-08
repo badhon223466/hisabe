@@ -12,35 +12,63 @@ const TransactionsList: React.FC = () => {
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchTxs = async () => {
+  const [filter, setFilter] = useState<'today' | '7days' | '30days' | 'all'>('all');
+
+  const fetchTxs = async (range: any) => {
+    setLoading(true);
     try {
-      const data = await api.transactions.list();
+      const data = await api.transactions.list(range);
       setTxs(data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
   useEffect(() => {
-    fetchTxs();
-  }, []);
+    fetchTxs(filter);
+  }, [filter]);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this transaction?")) return;
     try {
-      // Need a delete API in api.ts
       await api.transactions.delete(id);
       showToast("Transaction deleted", "success");
-      fetchTxs();
+      fetchTxs(filter);
     } catch (e) {
       showToast("Failed to delete", "error");
     }
   };
 
-  if (loading) return <div className="p-20 text-center animate-pulse">{t('loading')}...</div>;
+  const filters = [
+    { id: 'today', label: t('today') },
+    { id: '7days', label: t('this_week') },
+    { id: '30days', label: t('this_month') },
+    { id: 'all', label: 'All' }
+  ];
+
+  if (loading && txs.length === 0) return <div className="p-20 text-center animate-pulse">{t('loading')}...</div>;
 
   return (
     <div className="space-y-6 pb-20">
-      <h2 className="text-2xl font-bold px-2">{t('transactions')}</h2>
+      <div className="px-2 space-y-4">
+        <h2 className="text-2xl font-bold">{t('transactions')}</h2>
+        
+        {/* Filters */}
+        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+          {filters.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFilter(f.id as any)}
+              className={`flex-1 py-1.5 text-[9px] font-black rounded-lg transition-all ${
+                filter === f.id 
+                  ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' 
+                  : 'text-slate-500'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
       
       <div className="space-y-3">
         <AnimatePresence>
