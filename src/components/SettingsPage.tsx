@@ -12,11 +12,28 @@ const SettingsPage: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
   const [showCatModal, setShowCatModal] = useState(false);
   const [cats, setCats] = useState<any[]>([]);
   const [newCat, setNewCat] = useState({ name: '', type: 'expense', icon: 'Wallet', color: '#6366f1' });
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const user = auth.currentUser;
 
   useEffect(() => {
     fetchCats();
+    
+    const h = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    window.addEventListener('beforeinstallprompt', h);
+    return () => window.removeEventListener('beforeinstallprompt', h);
   }, []);
+
+  const handleInstall = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === 'accepted') {
+      setDeferredPrompt(null);
+    }
+  };
 
   const fetchCats = async () => {
     const data = await api.categories.list();
@@ -124,6 +141,20 @@ const SettingsPage: React.FC<{ onLogout: () => void }> = ({ onLogout }) => {
             </div>
             <Icon name="ChevronRight" size={18} className="text-slate-400" />
           </button>
+
+          {/* PWA Install Option */}
+          {deferredPrompt && (
+            <button 
+              onClick={handleInstall}
+              className="w-full p-4 flex items-center justify-between bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 transition-colors border-t border-slate-50 dark:border-slate-800"
+            >
+              <div className="flex items-center gap-3">
+                <Icon name="Download" size={20} className="text-indigo-600" />
+                <span className="font-bold text-sm">Install App (Chrome)</span>
+              </div>
+              <div className="bg-indigo-600 text-white text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter">New</div>
+            </button>
+          )}
         </div>
 
         {/* Action Buttons */}
