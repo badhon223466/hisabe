@@ -47,36 +47,50 @@ export const api = {
     getUser: () => auth.currentUser,
   },
   dashboard: {
-    get: async (range: 'today' | '7days' | '30days' | 'all' = 'all'): Promise<DashboardData> => {
+    get: async (range: string = 'all', customDates?: { start: string; end: string }): Promise<DashboardData> => {
       const userId = auth.currentUser?.uid;
       if (!userId) throw new Error("Not authenticated");
 
       try {
         const cats = await api.categories.list();
         
-        // Stats query - we still need to calculate stats based on range
-        // For simplicity and to avoid complex index requirements right now, 
-        // we'll fetch all and filter in memory or fetch with date where possible.
         let txQuery = query(collection(db, 'transactions'), where('userId', '==', userId));
         
+        const getBDDate = (date: Date) => {
+          return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(date);
+        };
+        
         const now = new Date();
-        now.setHours(0, 0, 0, 0);
+        const bdToday = getBDDate(now);
         
         let minDate = '';
+        let maxDate = '';
+
         if (range === 'today') {
-           minDate = now.toISOString().split('T')[0];
+           minDate = bdToday;
+        } else if (range === 'yesterday') {
+           const y = new Date(now);
+           y.setDate(y.getDate() - 1);
+           minDate = getBDDate(y);
+           maxDate = minDate;
         } else if (range === '7days') {
-           const d = new Date();
+           const d = new Date(now);
            d.setDate(d.getDate() - 7);
-           minDate = d.toISOString().split('T')[0];
+           minDate = getBDDate(d);
         } else if (range === '30days') {
-           const d = new Date();
+           const d = new Date(now);
            d.setMonth(d.getMonth() - 1);
-           minDate = d.toISOString().split('T')[0];
+           minDate = getBDDate(d);
+        } else if (range === 'custom' && customDates) {
+           minDate = customDates.start;
+           maxDate = customDates.end;
         }
 
         if (minDate) {
           txQuery = query(txQuery, where('date', '>=', minDate));
+        }
+        if (maxDate) {
+          txQuery = query(txQuery, where('date', '<=', maxDate));
         }
 
         const txSnap = await getDocs(txQuery);
@@ -100,8 +114,23 @@ export const api = {
           } as Transaction;
         });
 
-        // Sort by date desc for "recent"
-        const recent = [...allTxs].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+        // Filter out transactions that might be outside maxDate if server query wasn't combined perfectly
+        const filteredTxs = maxDate ? allTxs.filter(t => t.date <= maxDate) : allTxs;
+
+        // Reset totals based on filtered results
+        income = 0;
+        expense = 0;
+        filteredTxs.forEach(t => {
+          if (t.type === 'income') income += t.amount;
+          else expense += t.amount;
+        });
+
+        const recent = [...filteredTxs].sort((a, b) => {
+          // Sort by date primary, then created_at secondary for stability
+          const dateDiff = b.date.localeCompare(a.date);
+          if (dateDiff !== 0) return dateDiff;
+          return (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0);
+        }).slice(0, 5);
 
         // Get loans info (loans don't usually filter by range in same way, but keeping it)
         const loanQuery = query(collection(db, 'loans'), where('userId', '==', userId));
@@ -143,32 +172,49 @@ export const api = {
     }
   },
   transactions: {
-    list: async (range: 'today' | '7days' | '30days' | 'all' = 'all'): Promise<Transaction[]> => {
+    list: async (range: string = 'all', customDates?: { start: string; end: string }): Promise<Transaction[]> => {
       const userId = auth.currentUser?.uid;
       try {
         let q = query(collection(db, 'transactions'), where('userId', '==', userId));
         
+        const getBDDate = (date: Date) => {
+          return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Dhaka' }).format(date);
+        };
+        
         const now = new Date();
-        now.setHours(0, 0, 0, 0);
+        const bdToday = getBDDate(now);
         
         let minDate = '';
+        let maxDate = '';
+
         if (range === 'today') {
-           minDate = now.toISOString().split('T')[0];
+           minDate = bdToday;
+        } else if (range === 'yesterday') {
+           const y = new Date(now);
+           y.setDate(y.getDate() - 1);
+           minDate = getBDDate(y);
+           maxDate = minDate;
         } else if (range === '7days') {
-           const d = new Date();
+           const d = new Date(now);
            d.setDate(d.getDate() - 7);
-           minDate = d.toISOString().split('T')[0];
+           minDate = getBDDate(d);
         } else if (range === '30days') {
-           const d = new Date();
+           const d = new Date(now);
            d.setMonth(d.getMonth() - 1);
-           minDate = d.toISOString().split('T')[0];
+           minDate = getBDDate(d);
+        } else if (range === 'custom' && customDates) {
+           minDate = customDates.start;
+           maxDate = customDates.end;
         }
 
         if (minDate) {
           q = query(q, where('date', '>=', minDate));
         }
+        if (maxDate) {
+          q = query(q, where('date', '<=', maxDate));
+        }
         
-        // Sorting in client if complex where/orderBy combo hits index missing
+        // Fetch all candidates
         const snap = await getDocs(q);
         const cats = await api.categories.list();
         const txs = snap.docs.map(d => {
@@ -185,7 +231,14 @@ export const api = {
           } as Transaction;
         });
 
-        return txs.sort((a, b) => b.date.localeCompare(a.date));
+        // Filter and Sort in client
+        const filtered = maxDate ? txs.filter(t => t.date <= maxDate) : txs;
+
+        return filtered.sort((a, b) => {
+          const dateDiff = b.date.localeCompare(a.date);
+          if (dateDiff !== 0) return dateDiff;
+          return (b.created_at?.seconds || 0) - (a.created_at?.seconds || 0);
+        });
       } catch (e) {
         handleFirestoreError(e, OperationType.LIST, 'transactions');
         throw e;

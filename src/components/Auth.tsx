@@ -1,21 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
-import { signInWithGoogle } from '../lib/firebase';
+import { signInWithGoogle, signInWithGoogleRedirect, handleRedirectResult } from '../lib/firebase';
 import { motion } from 'framer-motion';
 import { Icon } from './Icon';
 
 const Auth: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
   const { t } = useApp();
   const [loading, setLoading] = useState(false);
+  const [useRedirect, setUseRedirect] = useState(false);
+
+  useEffect(() => {
+    const checkRedirect = async () => {
+      try {
+        const result = await handleRedirectResult();
+        if (result?.user) {
+          onSuccess();
+        }
+      } catch (e) {
+        console.error("Redirect login error:", e);
+      }
+    };
+    checkRedirect();
+  }, [onSuccess]);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
     try {
-      await signInWithGoogle();
-      onSuccess();
+      if (useRedirect) {
+        await signInWithGoogleRedirect();
+      } else {
+        await signInWithGoogle();
+        onSuccess();
+      }
     } catch (e) {
       console.error(e);
-      alert('Authentication failed');
+      alert('Authentication failed. If popups are blocked, try the redirect option below.');
     } finally {
       setLoading(false);
     }
@@ -45,6 +64,19 @@ const Auth: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
             </div>
             {loading ? 'Logging in...' : 'Sign in with Google'}
           </button>
+          
+          <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
+             <input 
+              type="checkbox" 
+              id="redirectMode" 
+              checked={useRedirect} 
+              onChange={e => setUseRedirect(e.target.checked)} 
+              className="w-4 h-4 accent-indigo-600"
+            />
+             <label htmlFor="redirectMode" className="text-xs font-medium text-slate-500 cursor-pointer">
+                Login in same window (Try if popup fails)
+             </label>
+          </div>
         </div>
         
         <p className="text-center mt-10 text-[10px] text-slate-400 uppercase tracking-widest font-bold">

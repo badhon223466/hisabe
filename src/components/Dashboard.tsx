@@ -14,13 +14,15 @@ const Dashboard: React.FC<{ onEdit?: (tx: Transaction) => void; onAdd?: () => vo
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [filter, setFilter] = useState<'today' | '7days' | '30days' | 'all'>('all');
+  const [filter, setFilter] = useState<string>('all');
+  const [customDates, setCustomDates] = useState({ start: '', end: '' });
+  const [showCustom, setShowCustom] = useState(false);
 
-  const fetchData = async (range: any) => {
+  const fetchData = async (range: string, dates?: { start: string; end: string }) => {
     setLoading(true);
     try {
       const [dash, accs] = await Promise.all([
-        api.dashboard.get(range),
+        api.dashboard.get(range, dates),
         api.accounts.list()
       ]);
       setData(dash);
@@ -33,10 +35,16 @@ const Dashboard: React.FC<{ onEdit?: (tx: Transaction) => void; onAdd?: () => vo
   };
 
   useEffect(() => {
-    fetchData(filter);
-  }, [filter]);
+    if (filter === 'custom') {
+      if (customDates.start && customDates.end) {
+        fetchData('custom', customDates);
+      }
+    } else {
+      fetchData(filter);
+    }
+  }, [filter, customDates]);
 
-  if (loading && !data) return <div className="flex items-center justify-center p-20 animate-pulse">{t('loading')}...</div>;
+  if (loading && !data && accounts.length === 0) return <div className="flex items-center justify-center p-20 animate-pulse">{t('loading')}...</div>;
 
   const totalIncome = data?.stats.total_income || 0;
   const totalExpense = data?.stats.total_expense || 0;
@@ -44,20 +52,26 @@ const Dashboard: React.FC<{ onEdit?: (tx: Transaction) => void; onAdd?: () => vo
 
   const filters = [
     { id: 'today', label: t('today') },
+    { id: 'yesterday', label: 'Yesterday' },
     { id: '7days', label: t('this_week') },
     { id: '30days', label: t('this_month') },
-    { id: 'all', label: 'All' }
+    { id: 'all', label: 'All' },
+    { id: 'custom', label: 'Custom' }
   ];
 
   return (
     <div className="space-y-6 pb-20">
       {/* Filters */}
-      <div className="flex bg-slate-100 dark:bg-slate-800 p-1.5 rounded-2xl">
+      <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-2xl overflow-x-auto scrollbar-hide no-scrollbar">
         {filters.map((f) => (
           <button
             key={f.id}
-            onClick={() => setFilter(f.id as any)}
-            className={`flex-1 py-2 text-[10px] font-bold rounded-xl transition-all ${
+            onClick={() => {
+              setFilter(f.id);
+              if (f.id === 'custom') setShowCustom(true);
+              else setShowCustom(false);
+            }}
+            className={`whitespace-nowrap px-4 py-2 text-[10px] font-bold rounded-xl transition-all ${
               filter === f.id 
                 ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' 
                 : 'text-slate-500'
@@ -67,6 +81,28 @@ const Dashboard: React.FC<{ onEdit?: (tx: Transaction) => void; onAdd?: () => vo
           </button>
         ))}
       </div>
+
+      {showCustom && (
+        <motion.div 
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex gap-2 items-center"
+        >
+          <input 
+            type="date" 
+            className="flex-1 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg text-xs font-bold border-none"
+            value={customDates.start}
+            onChange={e => setCustomDates({...customDates, start: e.target.value})}
+          />
+          <span className="text-xs font-bold text-slate-400">To</span>
+          <input 
+            type="date" 
+            className="flex-1 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg text-xs font-bold border-none"
+            value={customDates.end}
+            onChange={e => setCustomDates({...customDates, end: e.target.value})}
+          />
+        </motion.div>
+      )}
 
       {/* Balance Card */}
       <motion.div

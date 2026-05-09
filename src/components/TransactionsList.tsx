@@ -12,53 +12,84 @@ const TransactionsList: React.FC<{ onEdit?: (tx: Transaction) => void }> = ({ on
   const [txs, setTxs] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [filter, setFilter] = useState<'today' | '7days' | '30days' | 'all'>('all');
+  const [filter, setFilter] = useState<string>('all');
+  const [customDates, setCustomDates] = useState({ start: '', end: '' });
+  const [showCustom, setShowCustom] = useState(false);
 
-  const fetchTxs = async (range: any) => {
+  const fetchTxs = async (range: string, dates?: { start: string; end: string }) => {
     setLoading(true);
     try {
-      const data = await api.transactions.list(range);
+      const data = await api.transactions.list(range, dates);
       setTxs(data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
 
   useEffect(() => {
-    fetchTxs(filter);
-  }, [filter]);
+    if (filter === 'custom') {
+      if (customDates.start && customDates.end) {
+        fetchTxs('custom', customDates);
+      }
+    } else {
+      fetchTxs(filter);
+    }
+  }, [filter, customDates]);
 
   const handleDelete = async (id: string | number) => {
-    if (!confirm("Are you sure you want to delete this transaction? Balance will be adjusted.")) return;
+    if (!confirm("Are you sure? Balance will be adjusted.")) return;
     try {
       await api.transactions.delete(id.toString());
-      showToast("Transaction deleted", "success");
-      fetchTxs(filter);
+      showToast("Deleted", "success");
+      fetchTxs(filter, filter === 'custom' ? customDates : undefined);
     } catch (e) {
-      showToast("Failed to delete", "error");
+      showToast("Failed", "error");
     }
   };
 
   const filters = [
     { id: 'today', label: t('today') },
+    { id: 'yesterday', label: 'Yesterday' },
     { id: '7days', label: t('this_week') },
     { id: '30days', label: t('this_month') },
-    { id: 'all', label: 'All' }
+    { id: 'all', label: 'All' },
+    { id: 'custom', label: 'Custom' }
   ];
 
-  if (loading && txs.length === 0) return <div className="p-20 text-center animate-pulse">{t('loading')}...</div>;
+  const totalIncome = txs.reduce((acc, tx) => tx.type === 'income' ? acc + tx.amount : acc, 0);
+  const totalExpense = txs.reduce((acc, tx) => tx.type === 'expense' ? acc + tx.amount : acc, 0);
+  const netBalance = totalIncome - totalExpense;
 
   return (
     <div className="space-y-6 pb-20">
       <div className="px-2 space-y-4">
         <h2 className="text-2xl font-bold">{t('transactions')}</h2>
         
+        {/* Summary Dashboard for Transactions Page */}
+        <div className="grid grid-cols-3 gap-2">
+           <div className="bg-emerald-50 dark:bg-emerald-950/30 p-3 rounded-2xl border border-emerald-100 dark:border-emerald-900/50 text-center">
+              <p className="text-[8px] uppercase font-bold text-emerald-600 dark:text-emerald-400 mb-1">Income</p>
+              <p className="text-sm font-black text-emerald-700 dark:text-emerald-300">৳{totalIncome.toLocaleString()}</p>
+           </div>
+           <div className="bg-rose-50 dark:bg-rose-950/30 p-3 rounded-2xl border border-rose-100 dark:border-rose-900/50 text-center">
+              <p className="text-[8px] uppercase font-bold text-rose-600 dark:text-rose-400 mb-1">Expense</p>
+              <p className="text-sm font-black text-rose-700 dark:text-rose-300">৳{totalExpense.toLocaleString()}</p>
+           </div>
+           <div className="bg-indigo-50 dark:bg-indigo-950/30 p-3 rounded-2xl border border-indigo-100 dark:border-indigo-900/50 text-center">
+              <p className="text-[8px] uppercase font-bold text-indigo-600 dark:text-indigo-400 mb-1">Difference</p>
+              <p className="text-sm font-black text-indigo-700 dark:text-indigo-300">৳{netBalance.toLocaleString()}</p>
+           </div>
+        </div>
+
         {/* Filters */}
-        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl overflow-x-auto no-scrollbar scrollbar-hide">
           {filters.map((f) => (
             <button
               key={f.id}
-              onClick={() => setFilter(f.id as any)}
-              className={`flex-1 py-1.5 text-[9px] font-black rounded-lg transition-all ${
+              onClick={() => {
+                setFilter(f.id);
+                setShowCustom(f.id === 'custom');
+              }}
+              className={`whitespace-nowrap px-3 py-1.5 text-[9px] font-black rounded-lg transition-all ${
                 filter === f.id 
                   ? 'bg-white dark:bg-slate-700 shadow-sm text-indigo-600 dark:text-indigo-400' 
                   : 'text-slate-500'
@@ -68,6 +99,28 @@ const TransactionsList: React.FC<{ onEdit?: (tx: Transaction) => void }> = ({ on
             </button>
           ))}
         </div>
+
+        {showCustom && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex gap-2 items-center bg-white dark:bg-slate-900 p-3 rounded-2xl border border-slate-100 dark:border-slate-800"
+          >
+            <input 
+              type="date" 
+              className="flex-1 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg text-[10px] font-bold outline-none"
+              value={customDates.start}
+              onChange={e => setCustomDates({...customDates, start: e.target.value})}
+            />
+            <span className="text-[10px] font-bold text-slate-400">to</span>
+            <input 
+              type="date" 
+              className="flex-1 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg text-[10px] font-bold outline-none"
+              value={customDates.end}
+              onChange={e => setCustomDates({...customDates, end: e.target.value})}
+            />
+          </motion.div>
+        )}
       </div>
       
       <div className="space-y-3">

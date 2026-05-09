@@ -32,6 +32,7 @@ export interface Transaction {
   note: string;
   date: string;
   account_id: string | number;
+  created_at?: any;
 }
 
 export interface DashboardData {

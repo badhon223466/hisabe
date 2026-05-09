@@ -73,14 +73,19 @@ const translations: Record<Language, Record<string, string>> = {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [language, setLanguage] = useState<Language>('bn');
-  const [theme, setTheme] = useState<Theme>('light');
+  const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('lang') as Language) || 'bn');
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'light');
 
   const t = (key: string) => translations[language][key] || key;
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
+    localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('lang', language);
+  }, [language]);
 
   return (
     <AppContext.Provider value={{ language, setLanguage, theme, setTheme, t }}>
