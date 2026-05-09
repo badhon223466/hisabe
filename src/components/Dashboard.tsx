@@ -48,7 +48,7 @@ const Dashboard: React.FC<{ onEdit?: (tx: Transaction) => void; onAdd?: () => vo
 
   const totalIncome = data?.stats.total_income || 0;
   const totalExpense = data?.stats.total_expense || 0;
-  const balance = totalIncome - totalExpense;
+  const actualTotalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
 
   const filters = [
     { id: 'today', label: t('today') },
@@ -112,7 +112,7 @@ const Dashboard: React.FC<{ onEdit?: (tx: Transaction) => void; onAdd?: () => vo
       >
         <div className="relative z-10">
           <p className="text-indigo-100 text-sm">{t('total_balance')}</p>
-          <h2 className="text-4xl font-bold mt-1">৳ {balance.toLocaleString()}</h2>
+          <h2 className="text-4xl font-bold mt-1">৳ {actualTotalBalance.toLocaleString()}</h2>
           <div className="mt-6 flex justify-between items-center gap-4">
             <div className="flex-1 bg-white/10 backdrop-blur-md p-3 rounded-2xl">
               <p className="text-[10px] text-indigo-100 uppercase tracking-wider">{t('income')}</p>
